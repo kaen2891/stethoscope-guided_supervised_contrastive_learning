@@ -1,0 +1,9 @@
+tqdm
+pandas
+nlpaug
+cmapy
+audiomentations
+timm==0.4.5
+wget
+cmake==3.18.4
+numpy
