@@ -117,7 +117,7 @@ def parse_args():
 
     parser.add_argument('--method', type=str, default='ce')
     parser.add_argument('--domain_adaptation', action='store_true')
-    parser.add_argument('--domain_adaptation2', action='store_true')    
+    parser.add_argument('--domain_adaptation2', action='store_true')
     # Meta Domain CL & Patch-Mix CL loss
     parser.add_argument('--proj_dim', type=int, default=768)
     parser.add_argument('--mix_beta', default=1.0, type=float,
@@ -129,8 +129,8 @@ def parse_args():
     parser.add_argument('--alpha', type=float, default=1.0)
     parser.add_argument('--negative_pair', type=str, default='all',
                         help='the method for selecting negative pair', choices=['all', 'diff_label'])
-    parser.add_argument('--target_type', type=str, default='project_flow',
-                        help='how to make target representation', choices=['project_flow', 'grad_block1', 'grad_flow1', 'project_block1', 'grad_block2', 'grad_flow2', 'project_block2', 'project_block_all', 'representation_all'])
+    parser.add_argument('--target_type', type=str, default='project1_project2block', help='how to make target representation',
+                        choices=['project_flow_all', 'representation_all', 'z1block_project', 'z1_project2', 'project1block_project2', 'project1_r2block', 'project1_r2', 'project1_project2block', 'project_block_all', 'grad_block', 'grad_flow', 'project_block', 'project_flow'])
     
     # Meta for SCL
     parser.add_argument('--meta_mode', type=str, default='none',
@@ -284,7 +284,7 @@ def set_model(args):
     if not args.weighted_loss:
         weights = None
         criterion = nn.CrossEntropyLoss()
-    else:
+    else: #weighted_loss is used only for CE setting, no DAT and SG-SCL
         weights = torch.tensor(args.class_nums, dtype=torch.float32)
         weights = 1.0 / (weights / weights.sum())
         weights /= weights.sum()
@@ -418,53 +418,43 @@ def train(train_loader, model, classifier, projector, criterion, optimizer, epoc
                     
                     features2 = model(args.transforms(images), args=args, alpha=alpha, training=True)
                     
+                    feat1 = features[0]
+                    feat2 = features2[0]
                     
                     if args.target_type == 'project_flow_all':
-                        proj1, proj2 = classifier[1](features[1]), classifier[1](features2[1]) # classifier[1] = projector #
+                        proj1, proj2 = classifier[1](feat1), classifier[1](feat2) # classifier[1] = projector #
                     
                     
                     elif args.target_type == 'representation_all':
-                        proj1, proj2 = features[1], features2[1]
+                        proj1, proj2 = feat1, feat2
                     
-                    #target type
-                    #elif args.target_type == 'grad_block1':
                     elif args.target_type == 'z1block_project':
-                        proj1 = deepcopy(features[1].detach())
-                        proj2 = classifier[1](features2[1])
+                        proj1 = deepcopy(feat1.detach())
+                        proj2 = classifier[1](feat2)
                     
-                        
-                    #elif args.target_type == 'grad_flow1':
                     elif args.target_type == 'z1_project2':
-                        proj1 = features[1]
-                        proj2 = classifier[1](features2[1])
+                        proj1 = feat1
+                        proj2 = classifier[1](feat2)
                     
-                    
-                    #elif args.target_type == 'project_block1':
                     elif args.target_type == 'project1block_project2':
-                        proj1 = deepcopy(classifier[1](features[1]).detach())
-                        proj2 = classifier[1](features2[1])
+                        proj1 = deepcopy(classifier[1](feat1).detach())
+                        proj2 = classifier[1](feat2)
                     
-                    
-                    #elif args.target_type == 'grad_block2':
                     elif args.target_type == 'project1_r2block':
-                        proj1 = classifier[1](features[0])
-                        proj2 = deepcopy(features2[1].detach())
+                        proj1 = classifier[1](feat1)
+                        proj2 = deepcopy(feat2.detach())
                     
-                        
-                    #elif args.target_type == 'grad_flow2':
                     elif args.target_type == 'project1_r2':
-                        proj1 = classifier[1](features[0])
-                        proj2 = features2[1]
+                        proj1 = classifier[1](feat1)
+                        proj2 = feat2
                     
-                    
-                    #elif args.target_type == 'project_block2':
                     elif args.target_type == 'project1_project2block':
-                        proj1 = classifier[1](features[1])
-                        proj2 = deepcopy(classifier[1](features2[1]).detach())
+                        proj1 = classifier[1](feat1)
+                        proj2 = deepcopy(classifier[1](feat2).detach())
                     
                     elif args.target_type == 'project_block_all':
-                        proj1 = deepcopy(classifier[1](features[1]).detach())
-                        proj2 = deepcopy(classifier[1](features2[1]).detach())
+                        proj1 = deepcopy(classifier[1](feat1).detach())
+                        proj2 = deepcopy(classifier[1](feat2).detach())
                     
                     meta_loss = criterion[1](proj1, proj2, meta_labels) #meta cl loss
                     
