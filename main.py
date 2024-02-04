@@ -24,7 +24,7 @@ from util.augmentation import SpecAugment
 from util.misc import adjust_learning_rate, warmup_learning_rate, set_optimizer, update_moving_average
 from util.misc import AverageMeter, accuracy, save_model, update_json
 from models import get_backbone_class, Projector
-from method import MetaCL, PatchMixLoss, PatchMixConLoss
+from method import MetaCL
 
 
 def parse_args():
@@ -105,30 +105,14 @@ def parse_args():
     # for AST
     parser.add_argument('--audioset_pretrained', action='store_true',
                         help='load from imagenet- and audioset-pretrained model')
-    # for SSAST
-    parser.add_argument('--ssast_task', type=str, default='ft_avgtok', 
-                        help='pretraining or fine-tuning task', choices=['ft_avgtok', 'ft_cls'])
-    parser.add_argument('--fshape', type=int, default=16, 
-                        help='fshape of SSAST')
-    parser.add_argument('--tshape', type=int, default=16, 
-                        help='tshape of SSAST')
-    parser.add_argument('--ssast_pretrained_type', type=str, default='Patch', 
-                        help='pretrained ckpt version of SSAST model')
-
     parser.add_argument('--method', type=str, default='ce')
     parser.add_argument('--domain_adaptation', action='store_true')
     parser.add_argument('--domain_adaptation2', action='store_true')
-    # Meta Domain CL & Patch-Mix CL loss
+    # Meta Domain CL loss
     parser.add_argument('--proj_dim', type=int, default=768)
-    parser.add_argument('--mix_beta', default=1.0, type=float,
-                        help='patch-mix interpolation coefficient')
-    parser.add_argument('--time_domain', action='store_true',
-                        help='patchmix for the specific time domain')
 
     parser.add_argument('--temperature', type=float, default=0.06)
     parser.add_argument('--alpha', type=float, default=1.0)
-    parser.add_argument('--negative_pair', type=str, default='all',
-                        help='the method for selecting negative pair', choices=['all', 'diff_label'])
     parser.add_argument('--target_type', type=str, default='project1_project2block', help='how to make target representation',
                         choices=['project_flow_all', 'representation_all', 'z1block_project', 'z1_project2', 'project1block_project2', 'project1_r2block', 'project1_r2', 'project1_project2block', 'project_block_all', 'grad_block', 'grad_flow', 'project_block', 'project_flow'])
     
@@ -145,9 +129,6 @@ def parse_args():
     args.model_name = '{}_{}_{}'.format(args.dataset, args.model, args.method) if args.meta_mode == 'none' else '{}_{}_{}_{}'.format(args.dataset, args.model, args.method, args.meta_mode)
     if args.tag:
         args.model_name += '_{}'.format(args.tag)
-
-    if args.method in ['patchmix', 'patchmix_cl']:
-        assert args.model in ['ast', 'ssast']
     
     if args.domain_adaptation:
         args.save_folder = os.path.join(args.save_dir, 'da', args.model_name)
@@ -254,31 +235,19 @@ def set_model(args):
         kwargs['label_dim'] = args.n_cls
         kwargs['imagenet_pretrain'] = args.from_sl_official
         kwargs['audioset_pretrain'] = args.audioset_pretrained
-        kwargs['mix_beta'] = args.mix_beta  # for Patch-MixCL
         if args.domain_adaptation:
             kwargs['domain_label_dim'] = args.m_cls
-    elif args.model == 'ssast':
-        kwargs['label_dim'] = args.n_cls
-        kwargs['fshape'], kwargs['tshape'] = args.fshape, args.tshape
-        kwargs['fstride'], kwargs['tstride'] = 10, 10
-        kwargs['input_tdim'] = 798
-        kwargs['task'] = args.ssast_task
-        kwargs['pretrain_stage'] = not args.audioset_pretrained
-        kwargs['load_pretrained_mdl_path'] = args.ssast_pretrained_type
-        kwargs['mix_beta'] = args.mix_beta  # for Patch-MixCL
-        if args.domain_adaptation:
-            kwargs['domain_label_dim'] = args.m_cls # not debugging yet
 
     model = get_backbone_class(args.model)(**kwargs)
     if args.domain_adaptation:
-        class_classifier = nn.Linear(model.final_feat_dim, args.n_cls) if args.model not in ['ast', 'ssast'] else deepcopy(model.mlp_head)
-        domain_classifier = nn.Linear(model.final_feat_dim, args.m_cls) if args.model not in ['ast', 'ssast'] else deepcopy(model.domain_mlp_head)
+        class_classifier = nn.Linear(model.final_feat_dim, args.n_cls) if args.model not in ['ast'] else deepcopy(model.mlp_head)
+        domain_classifier = nn.Linear(model.final_feat_dim, args.m_cls) if args.model not in ['ast'] else deepcopy(model.domain_mlp_head)
     elif args.domain_adaptation2:
-        class_classifier = nn.Linear(model.final_feat_dim, args.n_cls) if args.model not in ['ast', 'ssast'] else deepcopy(model.mlp_head)
+        class_classifier = nn.Linear(model.final_feat_dim, args.n_cls) if args.model not in ['ast'] else deepcopy(model.mlp_head)
         domain_classifier = Projector(model.final_feat_dim, args.proj_dim)
     else:
-        classifier = nn.Linear(model.final_feat_dim, args.n_cls) if args.model not in ['ast', 'ssast'] else deepcopy(model.mlp_head)
-    projector = Projector(model.final_feat_dim, args.proj_dim) if args.method in ['patchmix_cl'] or args.domain_adaptation2 else nn.Identity()
+        classifier = nn.Linear(model.final_feat_dim, args.n_cls) if args.model not in ['ast'] else deepcopy(model.mlp_head)
+    projector = Projector(model.final_feat_dim, args.proj_dim) if args.domain_adaptation2 else nn.Identity()
     
     
     if not args.weighted_loss:
@@ -297,7 +266,7 @@ def set_model(args):
     elif args.domain_adaptation2:
         criterion2 = MetaCL(temperature=args.temperature)
            
-    if args.model not in ['ast', 'ssast'] and args.from_sl_official:
+    if args.model not in ['ast'] and args.from_sl_official:
         model.load_sl_official_weights()
         print('pretrained model loaded from PyTorch ImageNet-pretrained')
 
@@ -328,17 +297,6 @@ def set_model(args):
             criterion = [criterion.cuda(), criterion2.cuda()]
         else:
             criterion = [criterion.cuda()]
-    elif args.method == 'patchmix':
-        
-        if args.domain_adaptation:
-            criterion = [criterion.cuda(), PatchMixLoss(criterion=criterion).cuda(), PatchMixLoss(criterion=criterion2).cuda()]
-        elif args.domain_adaptation2:
-            criterion = [criterion.cuda(), PatchMixLoss(criterion=criterion).cuda(), PatchMixConLoss(temperature=args.temperature).cuda()]
-        else:
-            criterion = [criterion.cuda(), PatchMixLoss(criterion=criterion).cuda()]
-    elif args.method == 'patchmix_cl':
-        criterion = [criterion.cuda(), PatchMixConLoss(temperature=args.temperature).cuda()]
-    
     if torch.cuda.device_count() > 1:
         model = torch.nn.DataParallel(model)
         
@@ -463,55 +421,6 @@ def train(train_loader, model, classifier, projector, criterion, optimizer, epoc
                 else:
                     output = classifier(features)
                     loss = criterion[0](output, labels)
-                    
-
-            elif args.method == 'patchmix':
-                mix_images, labels_a, labels_b, lam, index = model(args.transforms(images), y=class_labels if args.domain_adaptation or args.domain_adaptation2 else labels, 
-                    y2=meta_labels if args.domain_adaptation or args.domain_adaptation2 else None, da_index=None, args=args, alpha=alpha, patch_mix=True, time_domain=args.time_domain, training=True)
-                
-                if args.domain_adaptation:
-                    output = classifier[0](mix_images[0])
-                    class_loss = criterion[1](output, labels_a[0], labels_b[0], lam)
-                    
-                    meta_output = classifier[1](mix_images[1])
-                    meta_loss = criterion[2](meta_output, labels_a[1], labels_b[1], lam)
-                    
-                    loss = class_loss + args.alpha * meta_loss
-                    
-                elif args.domain_adaptation2:
-                    output = classifier[0](mix_images[0])
-                    class_loss = criterion[1](output, labels_a[0], labels_b[0], lam)
-                    
-                    mix_images2, labels_a2, labels_b2, lam2, index2 = model(args.transforms(images), y=class_labels if args.domain_adaptation or args.domain_adaptation2 else labels, 
-                        y2=meta_labels if args.domain_adaptation or args.domain_adaptation2 else None, da_index=(lam, index), args=args, alpha=alpha, patch_mix=True, time_domain=args.time_domain, training=True)
-                    proj1, proj2 = classifier[1](mix_images[1]), classifier[1](mix_images2[1]) # classifier[1] = projector // #deepcopy for here? for ablation?
-                    
-                    meta_loss = criterion[2](proj1, proj2, labels_b, labels_b2, lam, index, args) #patchmix cl loss
-
-                    loss = class_loss + args.alpha * meta_loss
-                
-                else:
-                    output = classifier(mix_images)
-                    loss = criterion[1](output, labels_a, labels_b, lam)
-
-            elif args.method == 'patchmix_cl':
-                features = model(args.transforms(images))
-                output = classifier(features)
-                loss = criterion[0](output, labels)
-
-                if args.target_type == 'grad_block':
-                    proj1 = deepcopy(features.detach())
-                elif args.target_type == 'grad_flow':
-                    proj1 = features
-                elif args.target_type == 'project_block':
-                    proj1 = deepcopy(projector(features).detach())
-                elif args.target_type == 'project_flow':
-                    proj1 = projector(features)
-
-                # use 'patchmix_cl' for augmentation
-                mix_images, labels_a, labels_b, lam, index = model(args.transforms(images), y=labels, args=args, patch_mix=True, time_domain=args.time_domain)
-                proj2 = projector(mix_images)
-                loss += args.alpha * criterion[1](proj1, proj2, labels, labels_b, lam, index, args)
 
         losses.update(loss.item(), bsz)
         [acc1], _ = accuracy(output[:bsz], class_labels if args.domain_adaptation or args.domain_adaptation2 else labels, topk=(1,))
@@ -691,11 +600,11 @@ def main():
         best_acc, _, _  = validate(val_loader, model, classifier, criterion, args, best_acc)
 
     if args.domain_adaptation:
-        update_json('%s' % args.model_name, best_acc, path=os.path.join(args.save_dir, 'results_da.json'))
+        update_json('%s' % args.model_name, best_acc, path=os.path.join(args.save_dir, 'results_da.json')) #DAT
     elif args.domain_adaptation2:
-        update_json('%s' % args.model_name, best_acc, path=os.path.join(args.save_dir, 'results_da2.json'))
+        update_json('%s' % args.model_name, best_acc, path=os.path.join(args.save_dir, 'results_da2.json')) #SCL
     else:
-        update_json('%s' % args.model_name, best_acc, path=os.path.join(args.save_dir, 'results.json'))
+        update_json('%s' % args.model_name, best_acc, path=os.path.join(args.save_dir, 'results.json')) #CE
     
 if __name__ == '__main__':
     main()

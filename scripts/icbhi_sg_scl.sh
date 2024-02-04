@@ -1,6 +1,6 @@
 
 MODEL="ast"
-SEED="1"
+SEED="1 2 3 4 5"
 
 for s in $SEED
 do

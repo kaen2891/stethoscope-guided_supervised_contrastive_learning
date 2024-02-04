@@ -42,7 +42,7 @@ class ASTModel(nn.Module):
     :param audioset_pretrain: if use full AudioSet and ImageNet pretrained model
     :param model_size: the model size of AST, should be in [tiny224, small224, base224, base384], base224 and base 384 are same model, but are trained differently during ImageNet pretraining.
     """
-    def __init__(self, label_dim=527, fstride=10, tstride=10, input_fdim=128, input_tdim=1024, imagenet_pretrain=True, audioset_pretrain=False, model_size='base384', verbose=True, mix_beta=None, domain_label_dim=527):
+    def __init__(self, label_dim=527, fstride=10, tstride=10, input_fdim=128, input_tdim=1024, imagenet_pretrain=True, audioset_pretrain=False, model_size='base384', verbose=True, domain_label_dim=527):
         super(ASTModel, self).__init__()
         assert timm.__version__ == '0.4.5', 'Please use timm == 0.4.5, the code might not be compatible with newer versions.'
 
@@ -52,7 +52,6 @@ class ASTModel(nn.Module):
         # override timm input shape restriction
         timm.models.vision_transformer.PatchEmbed = PatchEmbed
         self.final_feat_dim = 768
-        self.mix_beta = mix_beta
 
         # if AudioSet pretraining is not used (but ImageNet pretraining may still apply)
         if audioset_pretrain == False:
@@ -173,58 +172,6 @@ class ASTModel(nn.Module):
         B, _, dim = patch.size()
         square = patch.reshape(B, h, w, dim)
         return square
-
-    def flatten_patch(self, square):
-        B, h, w, dim = square.shape
-        patch = square.reshape(B, h * w, dim)
-        return patch
-
-    def patch_mix(self, image, target, target2, da_index, args, time_domain=False, hw_num_patch=None):
-        
-        if da_index:
-            lam = da_index[0]
-            index = da_index[1]
-        else:
-            
-            if self.mix_beta > 0:
-                lam = np.random.beta(self.mix_beta, self.mix_beta)
-            else:
-                lam = 1
-        
-        batch_size, num_patch, dim = image.size()
-        device = image.device
-
-        if not da_index:
-            index = torch.randperm(batch_size).to(device)
-        
-
-        if not time_domain:
-            num_mask = int(num_patch * (1. - lam))
-            mask = torch.randperm(num_patch)[:num_mask].to(device)
-
-            image[:, mask, :] = image[index][:, mask, :]
-            lam = 1 - (num_mask / num_patch)
-        else:
-            squared_1 = self.square_patch(image, hw_num_patch)
-            squared_2 = self.square_patch(image[index], hw_num_patch)
-
-            w_size = squared_1.size()[2]
-            num_mask = int(w_size * (1. - lam))
-            mask = torch.randperm(w_size)[:num_mask].to(device)
-
-            squared_1[:, :, mask, :] = squared_2[:, :, mask, :]
-            image = self.flatten_patch(squared_1)
-            lam = 1 - (num_mask / w_size)
-        
-        
-        #if not isinstance(args.domain_adaptation, type(None)) or not isinstance(args.domain_adaptation2, type(None)):
-        if args.domain_adaptation or args.domain_adaptation2:
-            y_a, y_b = target, target[index]
-            y2_a, y2_b = target2, target2[index]
-            return image, (y_a, y2_a), (y_b, y2_b), lam, index
-        else:
-            y_a, y_b = target, target[index]
-            return image, y_a, y_b, lam, index
 
     @autocast()
     def forward(self, x, y=None, y2=None, da_index=None, patch_mix=False, time_domain=False, args=None, alpha=None, training=False):
