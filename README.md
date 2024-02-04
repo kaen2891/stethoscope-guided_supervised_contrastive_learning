@@ -29,7 +29,7 @@ Install the necessary packages with:
 $ pip install torch torchvision torchaudio
 $ pip install -r requirements.txt
 ```
-
+For the reproducibility, we used `torch=2.0.7` and `torchaudio=2.0.`
 
 ## Data Preparation
 Download the ICBHI dataset files from [official_page](https://bhichallenge.med.auth.gr/ICBHI_2017_Challenge).     
