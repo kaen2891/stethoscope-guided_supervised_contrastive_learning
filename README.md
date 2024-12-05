@@ -1,5 +1,5 @@
 # Stethoscope-guided Supervised Contrastive Learning (ICASSP 2024)
-[arXiv](https://arxiv.org/abs/2312.09603) | [BibTeX](#bibtex)
+[arXiv](https://arxiv.org/abs/2312.09603) | [Conference](https://ieeexplore.ieee.org/abstract/document/10447734) | [BibTeX](#bibtex)
 
 
 <p align="center">
