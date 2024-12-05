@@ -91,10 +91,12 @@ To get the t-sne results, run the shell files in `scripts`.
 If you find this repo useful for your research, please consider citing our paper:
 
 ```
-@article{kim2023stethoscope,
-  title={Stethoscope-guided Supervised Contrastive Learning for Cross-domain Adaptation on Respiratory Sound Classification},
+@inproceedings{kim2024stethoscope,
+  title={Stethoscope-Guided Supervised Contrastive Learning for Cross-Domain Adaptation on Respiratory Sound Classification},
   author={Kim, June-Woo and Bae, Sangmin and Cho, Won-Yang and Lee, Byungjo and Jung, Ho-Young},
-  journal={arXiv preprint arXiv:2312.09603},
-  year={2023}
+  booktitle={ICASSP 2024-2024 IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP)},
+  pages={1431--1435},
+  year={2024},
+  organization={IEEE}
 }
 ```
