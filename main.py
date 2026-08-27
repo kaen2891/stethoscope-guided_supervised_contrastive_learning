@@ -376,8 +376,8 @@ def train(train_loader, model, classifier, projector, criterion, optimizer, epoc
                     
                     features2 = model(args.transforms(images), args=args, alpha=alpha, training=True)
                     
-                    feat1 = features[0]
-                    feat2 = features2[0]
+                    feat1 = features[1]
+                    feat2 = features2[1]
                     
                     if args.target_type == 'project_flow_all':
                         proj1, proj2 = classifier[1](feat1), classifier[1](feat2) # classifier[1] = projector #
